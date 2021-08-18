@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!-- <script src="face-api/dist/face-api.js"></script> -->
+  <script src="face-api.js"></script>
+  <script type="text/javascript" src="https://code.jquery.com/jquery-2.1.1.min.js"></script>
+  <script src="sounds.js" type="text/javascript"></script>
+  <style>
+    html, body {
+	margin: 0px 0px 0px 0px;
+	height: 100%;
+    }
+
+    #container {
+	width: 100%;
+	height: 100%;
+    }
+
+    #input_video {
+
+	width: 100%;
+	height: 100%;
+
+	transform: scaleX(-1);
+
+    }
+
+    #overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	transform: scaleX(-1);
+    }
+  </style>
+</head>
+<body>
+<div id="container">
+  <video id="input_video" onloadedmetadata="onPlay(this)" autoplay="true" playsinline></video>
+  <canvas id="overlay"></canvas>
+</div>
+</body>
+
+  <script>
+    var open_cv_loaded = false;
+    var last_message = ""
+    var last_message_timestamp = Date.now()
+    var next_message = ""
+    var next_message_timestamp = Date.now()
+
+    let withBoxes = false;
+    
+    const SSD_MOBILENETV1 = 'ssd_mobilenetv1'
+    const TINY_FACE_DETECTOR = 'tiny_face_detector'
+
+    let selectedFaceDetector = SSD_MOBILENETV1
+
+    // ssd_mobilenetv1 options
+    let minConfidence = 0.5
+
+    // tiny_face_detector options
+    let inputSize = 512
+    let scoreThreshold = 0.5
+
+    const landmark_point_count = 68;
+
+    const THREE_DIMENSIONAL_LANDMARK_POINTS_FLATTENED = [ -7.4077796936035156e+001, 4.5610500335693359e+001,
+                                                 1.7611330032348633e+001, 
+                                                 -7.6078399658203125e+001, 2.4455335617065430e+001, 1.4652364253997803e+000,
+                                                 -7.0680282592773438e+001, 3.8770267963409424e+000, 1.6104341506958008e+001, 
+                                                 -6.9542381286621094e+001, -1.8663349151611328e+001, -5.0522098541259766e+000,
+   
+                                                 -6.0891132354736328e+001, -3.7201663970947266e+001,
+                                                 -4.9577393531799316e+000,
+     
+                                                 -4.7551403045654297e+001,
+                                                 -5.1671474456787109e+001, 2.1515935897827148e+001,
+     
+                                                 -3.3833507537841797e+001, -6.4209655761718750e+001,
+                                                 3.3763854980468750e+001,
+     
+                                                 -1.8493196487426758e+001,
+                                                 -7.5527656555175781e+001, 4.2787197113037109e+001,
+     
+                                                 -2.5200850963592529e+000, -7.7372253417968750e+001,
+                                                 4.5473331451416016e+001, 
+     
+                                                 1.3970505714416504e+001,
+                                                 -7.3213897705078125e+001, 6.4313529968261719e+001,
+     
+                                                 3.0962856292724609e+001, -6.6279350280761719e+001,
+                                                 3.5533737182617188e+001, 
+     
+                                                 4.6108547210693359e+001,
+                                                 -5.3055961608886719e+001, 1.9751256942749023e+001,
+     
+                                                 5.1060363769531250e+001, -3.2454692840576172e+001,
+                                                 6.6386039733886719e+001, 
+                                                 
+                                                 5.8377300262451172e+001,
+                                                 -1.4232730865478516e+001, 5.9445739746093750e+001,
+     
+                                                 6.3227752685546875e+001, 4.3665418624877930e+000,
+                                                 4.6228359222412109e+001, 
+     
+                                                 7.0979812622070312e+001,
+                                                 2.6926740646362305e+001, 4.6090355515480042e-001,
+    
+                                                 6.5315643310546875e+001, 4.6220058441162109e+001,
+                                                 4.7723823547363281e+001, 
+     
+                                                 -5.8375602722167969e+001,
+                                                 5.7522071838378906e+001, 7.4911415100097656e+001,
+     
+                                                 -4.7820030212402344e+001, 6.2965705871582031e+001,
+                                                 9.6279922485351562e+001, 
+     
+                                                 -3.4796894073486328e+001,
+                                                 6.4059089660644531e+001, 1.0583456420898438e+002,
+     
+                                                 -2.3467020034790039e+001, 6.1613960266113281e+001,
+                                                 1.1014395904541016e+002, 
+     
+                                                 -1.2404515266418457e+001,
+                                                 5.8514854431152344e+001, 1.1110581970214844e+002,
+     
+                                                 9.6587600708007812e+000, 5.9617969512939453e+001,
+                                                 1.1002123260498047e+002, 
+     
+                                                 2.0711694717407227e+001,
+                                                 6.3654747009277344e+001, 1.0981579589843750e+002,
+     
+                                                 3.2074752807617188e+001, 6.5145515441894531e+001,
+                                                 1.0512077331542969e+002, 
+     
+                                                 4.5245258331298828e+001,
+                                                 6.3173934936523438e+001, 9.4144226074218750e+001,
+     
+                                                 5.4559543609619141e+001, 5.6469257354736328e+001,
+                                                 7.4634750366210938e+001, 
+     
+                                                 -1.3849945068359375e+000,
+                                                 4.5427635192871094e+001, 1.1209272003173828e+002,
+     
+                                                 -1.3849945068359375e+000, 3.3059230804443359e+001,
+                                                 1.2122914123535156e+002, 
+     
+                                                 -1.3849945068359375e+000,
+                                                 2.0191362380981445e+001, 1.2911428833007812e+002,
+    
+                                                 -1.3849945068359375e+000, 7.7342357635498047e+000,
+                                                 1.3653234863281250e+002,
+     
+                                                 -1.4418341636657715e+001,
+                                                 4.0165048837661743e-001, 1.1071662902832031e+002,
+     
+                                                 -8.3029985427856445e+000, -1.3892960548400879e+000,
+                                                 1.1774624633789062e+002, 
+     
+                                                 -2.3706998825073242e+000,
+                                                 -3.3219952583312988e+000, 1.1901679229736328e+002,
+     
+                                                 4.5612163543701172e+000, -2.4215652942657471e+000,
+                                                 1.1639292907714844e+002, 
+     
+                                                 1.0586941719055176e+001,
+                                                 -5.3226190805435181e-001, 1.1313079071044922e+002,
+     
+                                                 -4.0067256927490234e+001, 4.5844459533691406e+001,
+                                                 8.9595939636230469e+001,
+     
+                                                 -3.2541095733642578e+001,
+                                                 4.9783782958984375e+001, 9.3007537841796875e+001,
+     
+                                                 -2.5366222381591797e+001, 4.8885505676269531e+001,
+                                                 9.0976623535156250e+001, -1.9025533676147461e+001,
+                                                 4.3527683258056641e+001, 9.3429924011230469e+001,
+                                                 -2.5210683822631836e+001, 4.3476085662841797e+001,
+                                                 9.4305854797363281e+001, -3.3464397430419922e+001,
+                                                 4.3444763183593750e+001, 9.4837562561035156e+001,
+                                                 1.4225140571594238e+001, 4.3614593505859375e+001,
+                                                 9.1954528808593750e+001, 2.2479167938232422e+001,
+                                                 4.7674880981445312e+001, 9.3482368469238281e+001,
+                                                 2.9758741378784180e+001, 4.7693107604980469e+001,
+                                                 9.3210464477539062e+001, 3.6196487426757812e+001,
+                                                 4.4752899169921875e+001, 9.0352371215820312e+001,
+                                                 2.9635911941528320e+001, 4.2387844085693359e+001,
+                                                 9.5226150512695312e+001, 2.2422723770141602e+001,
+                                                 4.2418308258056641e+001, 9.4690505981445312e+001,
+                                                 -2.4785892486572266e+001, -2.3192493438720703e+001,
+                                                 1.0339839935302734e+002, -1.7388151168823242e+001,
+                                                 -1.8571313858032227e+001, 1.1188236999511719e+002,
+                                                 -9.2983198165893555e+000, -1.6239971160888672e+001,
+                                                 1.1731330871582031e+002, -3.3596007823944092e+000,
+                                                 -1.8158702850341797e+001, 1.1823022460937500e+002,
+                                                 4.5456194877624512e+000, -1.7206506729125977e+001,
+                                                 1.1767270660400391e+002, 1.1584952354431152e+001,
+                                                 -2.0486402511596680e+001, 1.1311756896972656e+002,
+                                                 1.9875576019287109e+001, -2.5036510467529297e+001,
+                                                 1.0587088012695312e+002, 
+                                                 
+                                                 1.1517845153808594e+001,
+                                                 -3.0236152648925781e+001, 1.1565891265869141e+002,
+                                                 
+                                                 
+                                                 4.5666022300720215e+000, -3.2193908691406250e+001,
+                                                 1.1595104217529297e+002, 
+                                                 
+                                                 -3.3861181735992432e+000,
+                                                 -3.2590847015380859e+001, 1.1170287322998047e+002,
+                                                 
+                                                 -1.0372335433959961e+001, -3.1501707077026367e+001,
+                                                 1.1267192840576172e+002, 
+                                                 
+                                                 -1.7461778640747070e+001,
+                                                 -2.8766559600830078e+001, 1.0961690521240234e+002,
+                                                 
+                                                 -2.0606306076049805e+001, -2.3995977401733398e+001,
+                                                 1.0624508666992188e+002, 
+                                                 
+                                                 -1.0359879493713379e+001,
+                                                 -2.1467332839965820e+001, 1.1335329437255859e+002,
+                                                 
+                                                 -3.3716876506805420e+000, -2.3318824768066406e+001,
+                                                 1.1525502777099609e+002,
+                                                 
+                                                 4.5927386283874512e+000,
+                                                 -2.2431402206420898e+001, 1.1380648040771484e+002,
+                                                 
+                                                 1.5679312705993652e+001, -2.4708747863769531e+001,
+                                                 1.1011718750000000e+002, 
+                                                 
+                                                 4.5823898315429688e+000,
+                                                 -2.3363874435424805e+001, 1.1465561676025391e+002,
+                                                 
+                                                 -3.3716876506805420e+000, -2.3318824768066406e+001,
+                                                 1.1525502777099609e+002,
+                                                 
+                                                 -1.0346333503723145e+001,
+							  -2.2410360336303711e+001, 1.1409424591064453e+002 ];
+
+    function adjust_model_points() {
+	let adjusted_model_points = [];
+
+	for (let index=0; index<THREE_DIMENSIONAL_LANDMARK_POINTS_FLATTENED.length; index+=3) {
+	    x = THREE_DIMENSIONAL_LANDMARK_POINTS_FLATTENED[index];
+	    y = THREE_DIMENSIONAL_LANDMARK_POINTS_FLATTENED[index + 1];
+	    z = THREE_DIMENSIONAL_LANDMARK_POINTS_FLATTENED[index + 2];
+	    adjusted_model_points.push(-x);
+	    adjusted_model_points.push(y);
+	    adjusted_model_points.push(z);
+	}
+	return adjusted_model_points;
+    }
+
+    let adjusted_flat_model_points = adjust_model_points();
+    let model_points = false;
+
+    function compute_angles_using_opencv(width, height, flat_landmarks) {
+	if (!open_cv_loaded) {
+	    return null, null, null;
+	}
+	if (!model_points) {
+	    model_points = cv.matFromArray(1, landmark_point_count, cv.CV_32FC3,
+					   adjusted_flat_model_points);
+	}
+	let image_points = cv.matFromArray(1, landmark_point_count, cv.CV_32FC2,
+					   flat_landmarks);
+
+	let focal_length = width;
+	let center_x = width/2;
+	let center_y = height/2;
+	// camera_matrix = np.array([[focal_length, 0, center_x],
+	// 			  [0, focal_length, center_y],
+	// 			  [0, 0, 1]],
+	// 			 dtype = "double")
+	// Did I get the order right?
+	let camera_matrix = cv.matFromArray(3, 3, cv.CV_32FC1, [
+	    focal_length, 0, center_x,
+	    0, focal_length, center_y,
+	    0, 0, 1]);
+
+	// for the results
+	let rotation_vector = new cv.Mat();
+	let translation_vector = new cv.Mat();
+	const dist_coef = new cv.Mat(1, 8, cv.CV_32F, cv.Scalar.all(0));
+	cv.solvePnPRansac(model_points, image_points,
+			  camera_matrix, dist_coef,
+			  rotation_vector, translation_vector);
+
+	let rotation_matrix = new cv.Mat();
+	cv.Rodrigues(rotation_vector, rotation_matrix);
+
+	let projection_matrix = new cv.Mat();
+        let input = new cv.MatVector();
+        input.push_back(rotation_matrix);
+        input.push_back(translation_vector);
+	cv.hconcat(input, projection_matrix);
+	// the only result we care about is the euler_angles
+	let new_camera_matrix =  new cv.Mat();
+	let new_rotation_matrix =  new cv.Mat();
+	let new_translation_vector =  new cv.Mat();
+	let rotation_matrix_x =  new cv.Mat();
+	let rotation_matrix_y =  new cv.Mat();
+	let rotation_matrix_z =  new cv.Mat();
+	let euler_angles =  new cv.Mat();
+
+	cv.decomposeProjectionMatrix(projection_matrix,
+				     new_camera_matrix,
+				     new_rotation_matrix,
+				     new_translation_vector,
+				     rotation_matrix_x,
+				     rotation_matrix_y,
+				     rotation_matrix_z,
+				     euler_angles);
+	return [euler_angles.data64F[0],
+		euler_angles.data64F[1],
+		euler_angles.data64F[2]];
+    }
+
+    function getFaceDetectorOptions() {
+
+	return new faceapi.SsdMobilenetv1Options({ minConfidence })
+    }
+
+    function bounding_box(points) {
+	let left, top, right, bottom;
+	for (let i = 0; i < points.length; i++) {
+	    let point_x = points[i].x;
+	    let point_y = points[i].y;
+	    if (i == 0) {
+		left = point_x;
+		right = point_x;
+		top = point_y;
+		bottom = point_y;
+	    } else {
+		left = Math.min(left, point_x)
+		right = Math.max(right, point_x)
+		top = Math.min(top, point_y)
+		bottom = Math.max(bottom, point_y)
+	    }
+	}
+	return [left, top, right, bottom];
+    }
+
+function display_results(result) {
+    const canvas = $('#overlay').get(0)
+    const videoEl = $('#input_video').get(0)
+    // This sets the width and height of the canvas to the same
+    // width and height of the video.
+    // This canvas width isn't the screen dimensions, but
+    // is used when drawing.  However, we will have to adjust
+    // this since the canvas in screen dimensions is actually bigger than the
+    // video.  The video object has the same screen dimensions as the
+    // canvas since they are both 100% in both dimensions, but
+    // the video itself is not stretched to fit that shape.  Instead,
+    // it keeps its natural aspect ratio and it is stretched to fit one dimension
+    // and it is centered in the other dimensions.  This is done automatically.
+    // So, we have to adjust the canvas so that its coordinate system
+    // in the dimension in which the video is padded has extra space.
+    // That is done below.  We also setup a translation of the
+    // coordinate system via the context so that we can draw
+    // in the coordinate system of the video -- offset by the padding.
+    const dims = faceapi.matchDimensions(canvas, videoEl, true)
+    const video_width = videoEl.videoWidth
+    const video_height = videoEl.videoHeight
+    const canvas_original_height = canvas.offsetHeight;
+    const context = canvas.getContext('2d');
+
+
+    // Now fix this since the canvas is actually usually bigger than
+    // the video.
+    const video_ratio = video_width / video_height
+    const canvas_ratio = canvas.offsetWidth / canvas.offsetHeight;
+    // console.log(videoEl.videoWidth, videoEl.videoHeight, canvas.offsetWidth, canvas.offsetHeight)
+
+    context.save();
+    if (video_ratio > canvas_ratio) {
+	// Video is wider than canvas, so it touches the sides and there is extra room
+	// at the top and bottom.
+	// The addition has to be in video coordinates
+	const canvas_extra_height = (canvas.offsetHeight - canvas.offsetWidth / video_ratio) * (video_width / canvas.offsetWidth)
+	canvas.height = canvas.height + canvas_extra_height;
+	context.translate(0, canvas_extra_height / 2);
+
+    } else {
+	// Canvas is wider than video, so there is extra room at the left and right.
+	// Scale the canvas pixel height (which the video fills) by the video's aspect ratio
+	// to get the actual pixel width of the video.  Then subtract that from the pixel width of the
+	// canvas to get the extra pixel width.  Finally, convert that pixel size back to
+	// the coordinate system of the video by scaling by the ratio of video units to pixel units.
+	const canvas_extra_width = (canvas.offsetWidth - video_ratio * canvas.offsetHeight) * (video_height / canvas.offsetHeight)
+	canvas.width = canvas.width + canvas_extra_width;
+	
+	context.translate(canvas_extra_width / 2, 0);
+    }
+
+    const resizedResult = faceapi.resizeResults(result, dims)
+
+    if (withBoxes) {
+	faceapi.draw.drawDetections(canvas, resizedResult)
+    }
+    let flat_points = []
+    let landmark_positions = result.landmarks.positions
+    for (let i = 0; i < landmark_positions.length; i++) {
+	let point = landmark_positions[i]
+	flat_points.push(point.x)
+	flat_points.push(point.y)
+    }
+    
+    // We are going to call the python version using the post
+    // but also run the js version with opencv and commpare to see if I got the
+    // js version right.
+
+    let pitch, roll, yaw;
+    [pitch, yaw, roll] = compute_angles_using_opencv(video_width, video_height, flat_points);
+
+    // This is computed in the coordinates of the canvas without the padding
+    let face_left, face_top, face_right, face_bottom;
+    [face_left, face_top, face_right, face_bottom] = bounding_box(resizedResult.landmarks.positions);
+    display_feedback(resizedResult, pitch, roll, yaw, face_left, face_top, face_right, face_bottom);
+    context.restore();
+
+}
+
+function too_far_away(video_width, video_height, face_left, face_top, face_right, face_bottom) {
+    const face_width = face_right - face_left;
+    const face_height = face_bottom - face_top;
+    // Since the landmark points don't include anything higher on the head than the eyebrows,
+    // we need to scale that bounding box up to get the full head height before comparing to
+    // the height of the video.
+    const detected_face_height_to_head_ratio = 0.6
+    const face_to_video_ratio = 0.6
+    return ((face_width < (face_to_video_ratio * video_width)) &&
+	    ((face_height / detected_face_height_to_head_ratio) < (face_to_video_ratio * video_height)))
+}
+
+function not_centered(video_width, video_height, face_left, face_top, face_right, face_bottom) {
+    const move = move_direction(video_width, video_height,
+				face_left, face_top, face_right, face_bottom)
+    if (move == false) {
+	return false
+    } else {
+	return true
+    }
+}
+
+function move_direction(video_width, video_height, face_left, face_top, face_right, face_bottom) {
+    // Only return true, if the center of the face is quite far off of the center.
+    // The vertical dimension is problematic since the top detected part of the face
+    // is the eyebrows rather than the top of the head.  So, we either need more slop
+    // or we need an adjustment to scale the vertical head size up.
+    const max_x_offset_ratio = 0.15
+    const max_y_offset_ratio = 0.2
+    const face_center_x = (face_right + face_left) / 2.0;
+    const face_center_y = (face_bottom + face_top) / 2.0;
+    // Since the landmark points don't include anything higher on the head than the eyebrows,
+    // we need to scale that bounding box up to get the full head height before comparing to
+    // the height of the video.
+    const video_center_x = video_width / 2
+    const video_center_y = video_height / 2
+
+    const detected_face_height_to_head_ratio = 0.6
+    const face_to_video_ratio = 0.8
+    const offset_x = (face_center_x - video_center_x)
+
+    if (offset_x < 0) {
+	if (((- offset_x) / video_width) > max_x_offset_ratio) {
+	    return "Left"
+	}
+    } else {
+	if ((offset_x / video_width) > max_x_offset_ratio) {
+	    return "Right"
+	}
+    }
+    const offset_y = (face_center_y - video_center_y)
+    if (offset_y < 0) {
+	if (((- offset_y) / video_height) > max_y_offset_ratio) {
+	    return "Down"
+	}
+    } else {
+	if ((offset_y / video_height) > max_y_offset_ratio) {
+	    return "Up"
+	}
+    }
+    return false
+}
+
+function display_feedback(resizedResult, pitch, roll, yaw, face_left, face_top, face_right, face_bottom) {
+    const videoEl = $('#input_video').get(0)
+    const canvas = $('#overlay').get(0)
+    const context = canvas.getContext('2d');
+    const face_width = face_right - face_left;
+    const face_height = face_bottom - face_top;
+    const video_width = videoEl.videoWidth
+    const video_height = videoEl.videoHeight
+    
+    context.save();
+    context.scale(-1, 1);
+    context.translate(-canvas.width, 0);
+
+    const bottom = videoEl.videoHeight;
+    const canvas_width = videoEl.videoWidth;
+    context.font = '36px serif';
+
+    let message = ""
+    let debug_info = ""
+    
+    if (too_far_away(video_width, video_height,
+		     face_left, face_top, face_right, face_bottom)) {
+	message = "Move Closer"
+	sound = "move closer"
+	debug_info = face_width.toFixed() + ", " + face_height.toFixed() + " : " +
+	    video_width.toFixed() + ", " + video_height.toFixed() +
+	    " (" + face_left.toFixed() + ", " + face_top.toFixed() + " : " +
+	    face_right.toFixed() + ", " + face_bottom.toFixed() + ") "
+    } else if (not_centered(video_width, video_height,
+			    face_left, face_top, face_right, face_bottom)) {
+	let move_direction_string = move_direction(video_width, video_height,
+						   face_left, face_top, face_right, face_bottom)
+	message = "Move " + move_direction_string
+	sound = "move " + move_direction_string.toLowerCase()
+	debug_info = (((face_left + face_right) / 2) -  (video_width / 2)).toFixed() + ", " +
+	    ((face_top + face_bottom) / 2).toFixed() + " v: " +
+	    (video_width / 2).toFixed() + ", " + (video_height / 2).toFixed()	
+    } else if (pitch < -5) {
+	message = "Bring Your Chin Down"
+	sound = "lower chin"
+    } else if (pitch > 5) {
+	message = "Lift Your Chin Up"
+	sound = "raise chin"
+    } else if (yaw < -3) {
+	message = "Turn Your Head to the Right"
+	sound = "turn right"
+    } else if (yaw > 3) {
+	message = "Turn Your Head to the Left"
+	sound = "turn left"
+    } else {
+	message = "Ready"
+	sound = "ready"
+    }
+
+    if (message != last_message) {
+	let timestamp = Date.now()
+	// Only change the message if it has been a second since it was last updated.
+	if ((timestamp - last_message_timestamp) > 1000) {
+	    if ((next_message == false) || (message != next_message)) {
+		next_message = message
+		next_message_timestamp = timestamp
+		message = ""
+	    } else {
+		if ((timestamp - next_message_timestamp) > 500) {
+		    // only after a half a second of the new state
+		    // do we change it.
+		    last_message = message
+		    last_message_timestamp = timestamp
+		    next_message = false
+		    next_message_timestamp = timestamp
+		    play_sound(sound)
+		} else {
+		    message = ""
+		}
+	    }
+	} else {
+	    // if it hasn't been long enough, then just keep the old message
+	    message = last_message
+	}
+    }
+    context.fillStyle = "#FFFFFF";  
+    context.fillText(message, 21, bottom - 21);
+    if (message == "Ready") {
+	context.fillStyle = "#33AA33";
+    } else {
+	context.fillStyle = "#CC9999";
+    }
+    context.fillText(message, 20, bottom - 20);
+    // context.fillText(debug_info, 10, bottom - 130);
+    // context.fillStyle = "#CC3333";  
+    // context.fillText("pitch: " + pitch.toFixed(0) + " degrees",
+    // 		     10, bottom - 90);
+    // context.fillText("roll: " + roll.toFixed(0) + " degrees",
+    // 		     10, bottom - 50);
+    // context.fillText("yaw: " + yaw.toFixed(0) + " degrees",
+    //               10, bottom - 10);
+    context.restore();
+
+    // faceapi.draw.drawFaceLandmarks(canvas, resizedResult, { lineWidth: 3 } )
+    const fdraw = new faceapi.draw.DrawFaceLandmarks(resizedResult.landmarks,
+						     { lineWidth: 3, drawPoints: false, drawLines: true } )
+    // fdraw.draw(canvas)
+    context.restore();
+}
+
+async function onPlay() {
+    const videoEl = $('#input_video').get(0)
+
+    if (videoEl.paused || videoEl.ended || !isFaceDetectionModelLoaded())
+        return setTimeout(() => onPlay())
+    
+    let width = videoEl.videoWidth;
+    let height = videoEl.videoHeight;
+
+    const options = getFaceDetectorOptions()
+
+    const ts = Date.now()
+
+    const result = await faceapi.detectSingleFace(videoEl, options).withFaceLandmarks()
+
+    // updateTimeStats(Date.now() - ts)
+
+    if (result) {
+	display_results(result)
+    }
+
+    setTimeout(() => onPlay())
+}
+
+function getCurrentFaceDetectionNet() {
+    if (selectedFaceDetector === SSD_MOBILENETV1) {
+	return faceapi.nets.ssdMobilenetv1
+    }
+    if (selectedFaceDetector === TINY_FACE_DETECTOR) {
+	return faceapi.nets.tinyFaceDetector
+    }
+}
+
+    function isFaceDetectionModelLoaded() {
+	return !!getCurrentFaceDetectionNet().params
+    }
+
+    async function changeFaceDetector(detector) {
+	if (!isFaceDetectionModelLoaded()) {
+	    // await getCurrentFaceDetectionNet().load('/')
+	    await getCurrentFaceDetectionNet().load('')
+	}
+    }
+
+    function changeInputSize(size) {
+	inputSize = parseInt(size)
+    }
+
+    function onOpenCvReady() {
+	cv.then(function (val) {
+	    open_cv_loaded = true;
+	    cv = val;
+	});
+	// document.getElementById('status').innerHTML = 'OpenCV.js is ready.';
+    }
+
+    async function run() {
+	// load face detection and face landmark models
+	await changeFaceDetector(TINY_FACE_DETECTOR)
+	// await faceapi.loadFaceLandmarkModel('/')
+	await faceapi.loadFaceLandmarkModel('')
+
+	changeInputSize(224)
+
+	// try to access users webcam and stream the images
+	// to the video element
+	const stream = await navigator.mediaDevices.getUserMedia({ video: {} })
+	const videoEl = $('#input_video').get(0)
+	videoEl.srcObject = stream
+    }
+
+    $(document).ready(function() {
+      run()
+    })
+
+</script>
+<!-- <script async src="opencv-with-projection.js" onload="onOpenCvReady();" onerror="alert('error loading opencv js file');" type="text/javascript"></script> -->
+<script async src="opencv-with-projection-1.39.js" onload="onOpenCvReady();" onerror="alert('error loading opencv js file');" type="text/javascript"></script>
+
+</body>
+</html>
